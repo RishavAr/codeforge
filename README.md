@@ -53,12 +53,7 @@ Live monitoring dashboard at `localhost:8501` — auto-refreshes every 3 seconds
 python scripts/serve_dashboard.py
 ```
 
-![Overview](docs/overview.png)
-
-![Ablations](docs/ablations.png)
-
-![Problem Map](docs/problems.png)
-
+Link - http://localhost:8501
 ```bash
 mkdir -p docs
 # Then drop your screenshots into docs/
