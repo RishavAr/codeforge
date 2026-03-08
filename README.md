@@ -54,9 +54,7 @@ python scripts/serve_dashboard.py
 ```
 
 Link - http://localhost:8501
-```bash
 
-```
 
 ## Quick Start
 
