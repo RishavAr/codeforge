@@ -55,8 +55,7 @@ python scripts/serve_dashboard.py
 
 Link - http://localhost:8501
 ```bash
-mkdir -p docs
-# Then drop your screenshots into docs/
+
 ```
 
 ## Quick Start
