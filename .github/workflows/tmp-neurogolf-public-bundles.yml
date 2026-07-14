@@ -1,4 +1,4 @@
-name: Temporary NeuroGolf 7425 board extraction
+name: Temporary NeuroGolf 7300 dataset fetch
 
 on:
   pull_request:
@@ -9,40 +9,29 @@ permissions:
   contents: read
 
 jobs:
-  extract-7425:
+  fetch-dataset:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 20
     steps:
-      - name: Clone public 7425 research repository and collect current board
+      - name: Download public Kaggle dataset
         shell: bash
         run: |
           set -euxo pipefail
-          git clone --depth 1 https://github.com/MinseongS/neurogolf.git repo
-          cd repo
-          git lfs pull || true
-          cd ..
-          mkdir -p artifact
-          find repo -maxdepth 3 -type f \( -name 'submission.zip' -o -name '*.onnx' \) -printf '%p %s bytes\n' | sort | tee artifact/file_inventory.txt
-          cp repo/state/STATE.md artifact/
-          cp repo/state/submissions.md artifact/
-          if [ -f repo/submission/submission.zip ]; then
-            cp repo/submission/submission.zip artifact/neurogolf_current_7425_board.zip
-          elif [ -d repo/networks ] && [ "$(find repo/networks -maxdepth 1 -name 'task*.onnx' | wc -l)" -eq 400 ]; then
-            (cd repo/networks && zip -9 ../../artifact/neurogolf_current_7425_board.zip task*.onnx)
-          else
-            CAND=$(find repo -type f -name 'submission.zip' -printf '%T@ %p\n' | sort -nr | head -1 | cut -d' ' -f2-)
-            test -n "$CAND"
-            cp "$CAND" artifact/neurogolf_current_7425_board.zip
-          fi
-          unzip -t artifact/neurogolf_current_7425_board.zip
-          unzip -l artifact/neurogolf_current_7425_board.zip | tail -5
-          sha256sum artifact/neurogolf_current_7425_board.zip | tee artifact/sha256.txt
-          find artifact -maxdepth 2 -type f -printf '%p %s bytes\n' | sort
+          mkdir -p artifact/extracted
+          curl -A 'Mozilla/5.0' -fL --retry 4 --retry-all-errors --connect-timeout 30 --max-time 900 \
+            'https://www.kaggle.com/api/v1/datasets/download/zealous9230/neurogolf7300' \
+            -o artifact/zealous9230_neurogolf7300.zip
+          file artifact/zealous9230_neurogolf7300.zip
+          unzip -t artifact/zealous9230_neurogolf7300.zip
+          unzip -q artifact/zealous9230_neurogolf7300.zip -d artifact/extracted
+          find artifact/extracted -type f -printf '%p %s bytes\n' | sort | tee artifact/inventory.txt
+          find artifact/extracted -type f -name 'task*.onnx' | wc -l | tee artifact/model_count.txt
+          sha256sum artifact/zealous9230_neurogolf7300.zip | tee artifact/sha256.txt
 
-      - name: Upload current NeuroGolf board
+      - name: Upload public dataset
         uses: actions/upload-artifact@v4
         with:
-          name: neurogolf-public-current-7425-board
+          name: neurogolf-public-zealous7300-dataset
           path: artifact/
           compression-level: 0
           retention-days: 1
