@@ -1,4 +1,4 @@
-name: Temporary NeuroGolf positive model extraction
+name: Temporary NeuroGolf 7425 board extraction
 
 on:
   pull_request:
@@ -9,42 +9,40 @@ permissions:
   contents: read
 
 jobs:
-  extract-positive-models:
+  extract-7425:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
-      - name: Clone public research repository and locate exact model hashes
+      - name: Clone public 7425 research repository and collect current board
         shell: bash
         run: |
           set -euxo pipefail
-          git clone --depth 1 https://github.com/lljjcc426/NGC-work.git ngc
+          git clone --depth 1 https://github.com/MinseongS/neurogolf.git repo
+          cd repo
+          git lfs pull || true
+          cd ..
           mkdir -p artifact
-          python - <<'PY'
-          import hashlib, json, pathlib, shutil
-          root=pathlib.Path('ngc')
-          wanted={
-            '36a73b162000f3c2548a831c0c567b67724552478fc145cfd67b659237db686d':'task138.onnx',
-            '02ff032b8b63f6c6a7a40b5a63af97364d47b3b38d5df06bf4eb4916a0947275':'task216.onnx',
-          }
-          found=[]
-          for p in root.rglob('*.onnx'):
-            h=hashlib.sha256(p.read_bytes()).hexdigest()
-            if h in wanted:
-              dst=pathlib.Path('artifact')/wanted[h]
-              shutil.copy2(p,dst)
-              found.append({'sha256':h,'source':str(p),'destination':str(dst),'bytes':p.stat().st_size})
-          pathlib.Path('artifact/found.json').write_text(json.dumps(found,indent=2))
-          print(json.dumps(found,indent=2))
-          if len({x['sha256'] for x in found}) != len(wanted):
-            raise SystemExit('Did not find every requested model hash')
-          PY
-          cp 'ngc/workplace E/e_fast_batch3_submission_20260714.json' artifact/
-          sha256sum artifact/task*.onnx | tee artifact/sha256.txt
+          find repo -maxdepth 3 -type f \( -name 'submission.zip' -o -name '*.onnx' \) -printf '%p %s bytes\n' | sort | tee artifact/file_inventory.txt
+          cp repo/state/STATE.md artifact/
+          cp repo/state/submissions.md artifact/
+          if [ -f repo/submission/submission.zip ]; then
+            cp repo/submission/submission.zip artifact/neurogolf_current_7425_board.zip
+          elif [ -d repo/networks ] && [ "$(find repo/networks -maxdepth 1 -name 'task*.onnx' | wc -l)" -eq 400 ]; then
+            (cd repo/networks && zip -9 ../../artifact/neurogolf_current_7425_board.zip task*.onnx)
+          else
+            CAND=$(find repo -type f -name 'submission.zip' -printf '%T@ %p\n' | sort -nr | head -1 | cut -d' ' -f2-)
+            test -n "$CAND"
+            cp "$CAND" artifact/neurogolf_current_7425_board.zip
+          fi
+          unzip -t artifact/neurogolf_current_7425_board.zip
+          unzip -l artifact/neurogolf_current_7425_board.zip | tail -5
+          sha256sum artifact/neurogolf_current_7425_board.zip | tee artifact/sha256.txt
+          find artifact -maxdepth 2 -type f -printf '%p %s bytes\n' | sort
 
-      - name: Upload positive task models
+      - name: Upload current NeuroGolf board
         uses: actions/upload-artifact@v4
         with:
-          name: neurogolf-positive-task138-task216
+          name: neurogolf-public-current-7425-board
           path: artifact/
           compression-level: 0
           retention-days: 1
