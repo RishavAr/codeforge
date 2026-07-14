@@ -1,4 +1,4 @@
-name: Temporary NeuroGolf public bundle fetch
+name: Temporary NeuroGolf public kernel index
 
 on:
   pull_request:
@@ -9,84 +9,58 @@ permissions:
   contents: read
 
 jobs:
-  fetch-public-bundles:
+  query-public-kernels:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 15
     steps:
-      - name: Fetch public Kaggle kernel outputs
+      - name: Query Kaggle public kernel index
         shell: bash
         run: |
-          set -u
-          mkdir -p bundles
-          cat > /tmp/fetch_kernels.py <<'PY'
-          import json, pathlib, requests, traceback
-
-          OUT = pathlib.Path('bundles')
-          OUT.mkdir(exist_ok=True)
-          kernels = [
-              ('haonanzhengh', 'neurogolf-v9-models', 'haonanzhengh_v9'),
-              ('poby7722', '7268-neurogolf-best-score', 'poby_7268'),
-              ('lucifer19', 'neurogolf-agi-circuit-forge', 'lucifer_7269'),
-              ('lucifer19', 'neurogolf-agi-compression-core', 'lucifer_compression_core'),
-              ('lucifer19', 'chimera-safe-boost-caddies', 'lucifer_chimera'),
-              ('kaiwalyaatulraut', 'neurogolf-championship-solution', 'kaiwalya'),
-          ]
-          endpoint = 'https://api.kaggle.com/v1/kernels.KernelsApiService/ListKernelSessionOutput'
-          headers = {'User-Agent': 'Mozilla/5.0', 'Content-Type': 'application/json'}
-          summary = []
-          for owner, slug, label in kernels:
-              target = OUT / label
-              target.mkdir(exist_ok=True)
-              rec = {'owner': owner, 'slug': slug, 'label': label}
-              try:
-                  payload = {'userName': owner, 'kernelSlug': slug, 'pageSize': 100}
-                  r = requests.post(endpoint, json=payload, headers=headers, timeout=120)
-                  rec['status'] = r.status_code
-                  rec['content_type'] = r.headers.get('content-type')
-                  (target / 'api_response.txt').write_bytes(r.content)
-                  print(owner, slug, r.status_code, r.text[:500])
-                  if r.status_code != 200:
-                      # Also retain the public page for diagnosis.
-                      p = requests.get(f'https://www.kaggle.com/code/{owner}/{slug}', headers=headers, timeout=120)
-                      rec['page_status'] = p.status_code
-                      (target / 'page.html').write_bytes(p.content)
-                      summary.append(rec)
-                      continue
-                  data = r.json()
-                  files = data.get('files') or []
-                  rec['file_count'] = len(files)
-                  rec['files'] = []
-                  for item in files:
-                      name = item.get('fileName') or item.get('file_name')
-                      url = item.get('url')
-                      if not name or not url:
-                          continue
-                      out = target / name
-                      out.parent.mkdir(parents=True, exist_ok=True)
-                      dr = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=300)
-                      dr.raise_for_status()
-                      out.write_bytes(dr.content)
-                      rec['files'].append({'name': name, 'bytes': len(dr.content)})
-                      print('downloaded', label, name, len(dr.content))
-                  log = data.get('log')
-                  if log:
-                      (target / 'kernel.log').write_text(log)
-              except Exception as exc:
-                  rec['error'] = repr(exc)
-                  rec['traceback'] = traceback.format_exc()
-                  print(rec['traceback'])
-              summary.append(rec)
-          (OUT / 'fetch_summary.json').write_text(json.dumps(summary, indent=2))
-          print(json.dumps(summary, indent=2))
+          set -euxo pipefail
+          mkdir -p results
+          cat > /tmp/query.py <<'PY'
+          import json, pathlib, requests
+          out = pathlib.Path('results')
+          endpoint = 'https://api.kaggle.com/v1/kernels.KernelsApiService/ListKernels'
+          headers = {'User-Agent':'Mozilla/5.0','Content-Type':'application/json'}
+          queries = {
+            'competition_recent_1': {'competition':'neurogolf-2026','page':1,'pageSize':100},
+            'competition_recent_2': {'competition':'neurogolf-2026','page':2,'pageSize':100},
+            'competition_recent_3': {'competition':'neurogolf-2026','page':3,'pageSize':100},
+            'search_7281': {'competition':'neurogolf-2026','search':'7281','pageSize':100},
+            'search_7330': {'competition':'neurogolf-2026','search':'7330','pageSize':100},
+            'search_score': {'competition':'neurogolf-2026','search':'score','pageSize':100},
+            'user_udit22': {'competition':'neurogolf-2026','user':'udit22','pageSize':100},
+            'user_ryosuke': {'competition':'neurogolf-2026','user':'ryosuke','pageSize':100},
+          }
+          summary=[]
+          for name,payload in queries.items():
+            r=requests.post(endpoint,json=payload,headers=headers,timeout=120)
+            (out/f'{name}.json').write_bytes(r.content)
+            rec={'name':name,'status':r.status_code,'bytes':len(r.content)}
+            try:
+              data=r.json()
+              rec['keys']=list(data) if isinstance(data,dict) else None
+              items=(data.get('kernels') or data.get('items') or []) if isinstance(data,dict) else []
+              rec['count']=len(items)
+              rec['refs']=[]
+              for item in items:
+                ref=item.get('ref') or item.get('kernelRef') or item.get('id')
+                title=item.get('title') or item.get('kernelTitle') or item.get('slug')
+                rec['refs'].append({'ref':ref,'title':title})
+            except Exception as e:
+              rec['error']=repr(e)
+              rec['text']=r.text[:500]
+            summary.append(rec)
+          (out/'summary.json').write_text(json.dumps(summary,indent=2))
+          print(json.dumps(summary,indent=2))
           PY
-          python /tmp/fetch_kernels.py
-          find bundles -maxdepth 4 -type f -printf '%p %s bytes\n' | sort | head -500
-          find bundles -type f -name 'submission.zip' -print -exec sha256sum {} \;
+          python /tmp/query.py
 
-      - name: Upload fetched public bundles
+      - name: Upload public kernel index
         uses: actions/upload-artifact@v4
         with:
-          name: neurogolf-public-kaggle-bundles
-          path: bundles/
+          name: neurogolf-public-kernel-index
+          path: results/
           compression-level: 0
           retention-days: 1
