@@ -1,4 +1,4 @@
-name: Temporary NeuroGolf public kernel index
+name: Temporary NeuroGolf public output harvest
 
 on:
   pull_request:
@@ -9,58 +9,90 @@ permissions:
   contents: read
 
 jobs:
-  query-public-kernels:
+  harvest-public-outputs:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
-      - name: Query Kaggle public kernel index
+      - name: Download known public NeuroGolf outputs
         shell: bash
         run: |
           set -euxo pipefail
-          mkdir -p results
-          cat > /tmp/query.py <<'PY'
-          import json, pathlib, requests
-          out = pathlib.Path('results')
-          endpoint = 'https://api.kaggle.com/v1/kernels.KernelsApiService/ListKernels'
-          headers = {'User-Agent':'Mozilla/5.0','Content-Type':'application/json'}
-          queries = {
-            'competition_recent_1': {'competition':'neurogolf-2026','page':1,'pageSize':100},
-            'competition_recent_2': {'competition':'neurogolf-2026','page':2,'pageSize':100},
-            'competition_recent_3': {'competition':'neurogolf-2026','page':3,'pageSize':100},
-            'search_7281': {'competition':'neurogolf-2026','search':'7281','pageSize':100},
-            'search_7330': {'competition':'neurogolf-2026','search':'7330','pageSize':100},
-            'search_score': {'competition':'neurogolf-2026','search':'score','pageSize':100},
-            'user_udit22': {'competition':'neurogolf-2026','user':'udit22','pageSize':100},
-            'user_ryosuke': {'competition':'neurogolf-2026','user':'ryosuke','pageSize':100},
-          }
+          mkdir -p outputs
+          cat > /tmp/harvest.py <<'PY'
+          import json, pathlib, requests, traceback
+
+          endpoint='https://api.kaggle.com/v1/kernels.KernelsApiService/ListKernelSessionOutput'
+          headers={'User-Agent':'Mozilla/5.0','Content-Type':'application/json'}
+          roots=pathlib.Path('outputs')
+          slugs=[
+            'lucifer19/submission-lockbox',
+            'lucifer19/neurogolf-agi-compression-core',
+            'lucifer19/chimera-safe-boost-caddies',
+            'lucifer19/neurogolf-agi-circuit-forge',
+            'kaiwalyaatulraut/neurogolf-championship-solution',
+            'poby7722/7268-neurogolf-best-score',
+            'hanifnoerrofiq/the-epic-sax-ensembler',
+            'nikitagajbhiye30/neurogolf-00',
+            'nikitagajbhiye30/neurogolf-01',
+            'anasriaz/the-2026-neurogolf-championship',
+            'georgymamarin/the-onnx-file-that-passes-every-check-neurogolf',
+            'koushikkumardinda/neurogolf-championship-the-auto-golfer',
+            'biohack44/neurogolf-2026-championship-best-solution',
+            'hanifnoerrofiq/8-may-update',
+            'yusuketogashi/2026-neurogolf-baseline',
+            'seddiktrk/neurogolf-2026-all-graph-surgeries',
+            'seddiktrk/surgical-onnx-precision-parameter-reduction',
+            'franksunp/compact-onnx-artifact-starter-ii',
+            'jonathanncoletti/neurogolf-merged91-workbench',
+            'jonathanncoletti/neurogolf-7242-task-graft-with-explainations',
+          ]
           summary=[]
-          for name,payload in queries.items():
-            r=requests.post(endpoint,json=payload,headers=headers,timeout=120)
-            (out/f'{name}.json').write_bytes(r.content)
-            rec={'name':name,'status':r.status_code,'bytes':len(r.content)}
+          for full in slugs:
+            owner,slug=full.split('/',1)
+            label=(owner+'__'+slug).replace('/','__')
+            out=roots/label
+            out.mkdir(parents=True,exist_ok=True)
+            rec={'ref':full,'pages':0,'files':[]}
+            token=None
             try:
-              data=r.json()
-              rec['keys']=list(data) if isinstance(data,dict) else None
-              items=(data.get('kernels') or data.get('items') or []) if isinstance(data,dict) else []
-              rec['count']=len(items)
-              rec['refs']=[]
-              for item in items:
-                ref=item.get('ref') or item.get('kernelRef') or item.get('id')
-                title=item.get('title') or item.get('kernelTitle') or item.get('slug')
-                rec['refs'].append({'ref':ref,'title':title})
+              while True:
+                payload={'userName':owner,'kernelSlug':slug,'pageSize':100}
+                if token: payload['pageToken']=token
+                r=requests.post(endpoint,json=payload,headers=headers,timeout=120)
+                rec['status']=r.status_code
+                if r.status_code!=200:
+                  (out/'api_error.txt').write_bytes(r.content)
+                  break
+                data=r.json(); rec['pages']+=1
+                if rec['pages']==1 and data.get('log'):
+                  (out/'kernel.log').write_text(data['log'])
+                for item in data.get('files') or []:
+                  name=item.get('fileName') or item.get('file_name') or ''
+                  url=item.get('url')
+                  keep=(name.lower().endswith('.zip') or name.lower().endswith('.json') or name.lower().endswith('.csv'))
+                  if not keep or not url: continue
+                  target=out/name
+                  target.parent.mkdir(parents=True,exist_ok=True)
+                  dr=requests.get(url,headers={'User-Agent':'Mozilla/5.0'},timeout=600)
+                  dr.raise_for_status(); target.write_bytes(dr.content)
+                  rec['files'].append({'name':name,'bytes':len(dr.content)})
+                  print('downloaded',full,name,len(dr.content),flush=True)
+                token=data.get('nextPageToken') or data.get('next_page_token')
+                if not token: break
             except Exception as e:
-              rec['error']=repr(e)
-              rec['text']=r.text[:500]
+              rec['error']=repr(e); rec['traceback']=traceback.format_exc()
+              print(rec['traceback'],flush=True)
             summary.append(rec)
-          (out/'summary.json').write_text(json.dumps(summary,indent=2))
+          (roots/'harvest_summary.json').write_text(json.dumps(summary,indent=2))
           print(json.dumps(summary,indent=2))
           PY
-          python /tmp/query.py
+          python /tmp/harvest.py
+          find outputs -type f -printf '%p %s bytes\n' | sort
 
-      - name: Upload public kernel index
+      - name: Upload harvested outputs
         uses: actions/upload-artifact@v4
         with:
-          name: neurogolf-public-kernel-index
-          path: results/
+          name: neurogolf-known-public-outputs
+          path: outputs/
           compression-level: 0
           retention-days: 1
