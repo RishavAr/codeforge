@@ -1,0 +1,76 @@
+name: Reconstruct NeuroGolf ARC-GEN tasks
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reconstruct:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone ARC repositories
+        run: |
+          git clone --depth 1 https://github.com/fchollet/ARC-AGI.git arc-agi
+          git clone --depth 1 https://github.com/google/ARC-GEN.git arc-gen
+
+      - name: Map task numbers and generate fresh cases
+        run: |
+          python - <<'PY'
+          import ast, json, pathlib, subprocess, sys
+
+          nums = [18, 23, 219, 255]
+          training = pathlib.Path('arc-agi/data/training')
+          hashes = sorted(p.stem for p in training.glob('*.json'))
+          mapping = {str(n): hashes[n-1] for n in nums}
+          pathlib.Path('task_hashes.json').write_text(json.dumps(mapping, indent=2))
+          print(mapping)
+
+          outdir = pathlib.Path('fresh_pairs')
+          outdir.mkdir()
+          for n in nums:
+              h = mapping[str(n)]
+              cp = subprocess.run(
+                  [sys.executable, 'arc_gen.py', 'generate', h, '2000'],
+                  cwd='arc-gen', capture_output=True, text=True, timeout=1200,
+              )
+              if cp.returncode:
+                  raise SystemExit(f'ARC-GEN failed for task {n} hash {h}: {cp.stderr[-2000:]}')
+              pairs = ast.literal_eval(cp.stdout)
+              (outdir / f'task{n:03d}_{h}_fresh2000.json').write_text(json.dumps(pairs))
+              print(n, h, len(pairs))
+          PY
+
+      - name: Collect generator source and hash references
+        run: |
+          mkdir -p hash_references
+          python - <<'PY'
+          import json, pathlib, subprocess
+          mapping=json.load(open('task_hashes.json'))
+          for n,h in mapping.items():
+              cp=subprocess.run(
+                  ['grep','-RIn','--exclude-dir=.git','--exclude=*.zip',h,'arc-gen'],
+                  capture_output=True,text=True,
+              )
+              pathlib.Path(f'hash_references/task{int(n):03d}_{h}.txt').write_text(cp.stdout)
+          PY
+          tar -czf arcgen_source_no_data.tar.gz \
+            --exclude='arc-gen/.git' \
+            --exclude='arc-gen/misc' \
+            --exclude='arc-gen/**/*.zip' \
+            --exclude='arc-gen/**/*.json' \
+            arc-gen
+
+      - name: Upload reconstruction artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: neurogolf-arcgen-reconstruction
+          path: |
+            task_hashes.json
+            fresh_pairs/
+            hash_references/
+            arcgen_source_no_data.tar.gz
+          retention-days: 1
