@@ -1,4 +1,4 @@
-name: Temporary NeuroGolf public output harvest
+name: Temporary NeuroGolf 7379 package extraction
 
 on:
   pull_request:
@@ -9,90 +9,29 @@ permissions:
   contents: read
 
 jobs:
-  harvest-public-outputs:
+  extract-7379:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     steps:
-      - name: Download known public NeuroGolf outputs
+      - name: Clone public research repository and collect package
         shell: bash
         run: |
           set -euxo pipefail
-          mkdir -p outputs
-          cat > /tmp/harvest.py <<'PY'
-          import json, pathlib, requests, traceback
+          git clone --depth 1 https://github.com/lljjcc426/NGC-work.git ngc
+          mkdir -p artifact
+          SRC='ngc/workplace B/20260713_b_team7378_original_rewrites_v1'
+          cp "$SRC/submission/submission.zip" artifact/neurogolf_public_7379_07_submission.zip
+          cp "$SRC/submission/base_submission.zip" artifact/neurogolf_public_7377_86_base.zip
+          cp "$SRC/README.md" artifact/README_7379.md
+          cp -r "$SRC/reports" artifact/reports
+          cp -r "$SRC/models" artifact/models
+          sha256sum artifact/*.zip | tee artifact/sha256.txt
+          find artifact -maxdepth 3 -type f -printf '%p %s bytes\n' | sort
 
-          endpoint='https://api.kaggle.com/v1/kernels.KernelsApiService/ListKernelSessionOutput'
-          headers={'User-Agent':'Mozilla/5.0','Content-Type':'application/json'}
-          roots=pathlib.Path('outputs')
-          slugs=[
-            'lucifer19/submission-lockbox',
-            'lucifer19/neurogolf-agi-compression-core',
-            'lucifer19/chimera-safe-boost-caddies',
-            'lucifer19/neurogolf-agi-circuit-forge',
-            'kaiwalyaatulraut/neurogolf-championship-solution',
-            'poby7722/7268-neurogolf-best-score',
-            'hanifnoerrofiq/the-epic-sax-ensembler',
-            'nikitagajbhiye30/neurogolf-00',
-            'nikitagajbhiye30/neurogolf-01',
-            'anasriaz/the-2026-neurogolf-championship',
-            'georgymamarin/the-onnx-file-that-passes-every-check-neurogolf',
-            'koushikkumardinda/neurogolf-championship-the-auto-golfer',
-            'biohack44/neurogolf-2026-championship-best-solution',
-            'hanifnoerrofiq/8-may-update',
-            'yusuketogashi/2026-neurogolf-baseline',
-            'seddiktrk/neurogolf-2026-all-graph-surgeries',
-            'seddiktrk/surgical-onnx-precision-parameter-reduction',
-            'franksunp/compact-onnx-artifact-starter-ii',
-            'jonathanncoletti/neurogolf-merged91-workbench',
-            'jonathanncoletti/neurogolf-7242-task-graft-with-explainations',
-          ]
-          summary=[]
-          for full in slugs:
-            owner,slug=full.split('/',1)
-            label=(owner+'__'+slug).replace('/','__')
-            out=roots/label
-            out.mkdir(parents=True,exist_ok=True)
-            rec={'ref':full,'pages':0,'files':[]}
-            token=None
-            try:
-              while True:
-                payload={'userName':owner,'kernelSlug':slug,'pageSize':100}
-                if token: payload['pageToken']=token
-                r=requests.post(endpoint,json=payload,headers=headers,timeout=120)
-                rec['status']=r.status_code
-                if r.status_code!=200:
-                  (out/'api_error.txt').write_bytes(r.content)
-                  break
-                data=r.json(); rec['pages']+=1
-                if rec['pages']==1 and data.get('log'):
-                  (out/'kernel.log').write_text(data['log'])
-                for item in data.get('files') or []:
-                  name=item.get('fileName') or item.get('file_name') or ''
-                  url=item.get('url')
-                  keep=(name.lower().endswith('.zip') or name.lower().endswith('.json') or name.lower().endswith('.csv'))
-                  if not keep or not url: continue
-                  target=out/name
-                  target.parent.mkdir(parents=True,exist_ok=True)
-                  dr=requests.get(url,headers={'User-Agent':'Mozilla/5.0'},timeout=600)
-                  dr.raise_for_status(); target.write_bytes(dr.content)
-                  rec['files'].append({'name':name,'bytes':len(dr.content)})
-                  print('downloaded',full,name,len(dr.content),flush=True)
-                token=data.get('nextPageToken') or data.get('next_page_token')
-                if not token: break
-            except Exception as e:
-              rec['error']=repr(e); rec['traceback']=traceback.format_exc()
-              print(rec['traceback'],flush=True)
-            summary.append(rec)
-          (roots/'harvest_summary.json').write_text(json.dumps(summary,indent=2))
-          print(json.dumps(summary,indent=2))
-          PY
-          python /tmp/harvest.py
-          find outputs -type f -printf '%p %s bytes\n' | sort
-
-      - name: Upload harvested outputs
+      - name: Upload NeuroGolf 7379 package
         uses: actions/upload-artifact@v4
         with:
-          name: neurogolf-known-public-outputs
-          path: outputs/
+          name: neurogolf-public-7379-package
+          path: artifact/
           compression-level: 0
           retention-days: 1
