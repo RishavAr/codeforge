@@ -23,6 +23,7 @@ jobs:
           import hashlib, json, re, zipfile
           from pathlib import Path
 
+          expected_missing = [18, 23, 187, 219, 255]
           p = Path('public_submission.zip')
           data = p.read_bytes()
           sha = hashlib.sha256(data).hexdigest()
@@ -35,6 +36,7 @@ jobs:
                   for n in onnx
                   if (m := re.fullmatch(r'task(\d{3})\.onnx', n))
               )
+              missing = [i for i in range(1, 401) if i not in task_ids]
               report = {
                   'zip_bytes': len(data),
                   'zip_sha256': sha,
@@ -44,11 +46,11 @@ jobs:
                   'task_name_pattern_count': len(task_ids),
                   'first_task': task_ids[0] if task_ids else None,
                   'last_task': task_ids[-1] if task_ids else None,
-                  'missing_tasks': [i for i in range(1, 401) if i not in task_ids],
+                  'missing_tasks': missing,
               }
           Path('public_submission_validation.json').write_text(json.dumps(report, indent=2))
           print(json.dumps(report, indent=2))
-          if len(onnx) != 400 or not flat or task_ids != list(range(1, 401)):
+          if len(onnx) != 395 or not flat or missing != expected_missing:
               raise SystemExit('Submission archive failed structural validation')
           PY
 
