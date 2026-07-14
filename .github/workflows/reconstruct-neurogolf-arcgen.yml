@@ -1,4 +1,4 @@
-name: Fetch NeuroGolf public research sources
+name: Fetch NeuroGolf rules and discussions
 
 on:
   pull_request:
@@ -9,47 +9,39 @@ permissions:
   contents: read
 
 jobs:
-  fetch-sources:
+  fetch-pages:
     runs-on: ubuntu-latest
     steps:
-      - name: Clone research repositories
+      - name: Fetch public Kaggle metadata and pages
         run: |
-          git clone --depth 1 https://github.com/lljjcc426/NGC-work.git ngc-work
-          git clone --depth 1 https://github.com/beltromatti/neurogolf-2026.git public-7090-source
-
-      - name: Package source snapshots
-        run: |
-          rm -rf ngc-work/.git public-7090-source/.git
-          tar -czf ngc-work-source.tar.gz ngc-work
-          tar -czf public-7090-source.tar.gz public-7090-source
-          sha256sum ngc-work-source.tar.gz public-7090-source.tar.gz > source_sha256.txt
-          du -h ngc-work-source.tar.gz public-7090-source.tar.gz
-
-      - name: Probe public Kaggle artifacts without credentials
-        run: |
+          mkdir -p pages
           set +e
-          curl -L --fail --retry 3 \
-            https://www.kaggle.com/api/v1/kernels/output/prvsiyan/neurogolf-7266-72-w-visualizations \
-            -o kernel7266_output.zip
-          echo "kernel7266_status=$?" > kaggle_probe_status.txt
-          curl -L --fail --retry 3 \
-            https://www.kaggle.com/api/v1/datasets/download/zealous9230/neurogolf7300 \
-            -o dataset7300.zip
-          echo "dataset7300_status=$?" >> kaggle_probe_status.txt
-          ls -lh kernel7266_output.zip dataset7300.zip 2>/dev/null || true
-          file kernel7266_output.zip dataset7300.zip 2>/dev/null || true
+          curl -L -A 'Mozilla/5.0' --retry 3 \
+            https://www.kaggle.com/api/v1/competitions/view/neurogolf-2026 \
+            -o pages/competition.json
+          echo "competition_api=$?" > pages/status.txt
+          curl -L -A 'Mozilla/5.0' --retry 3 \
+            https://www.kaggle.com/competitions/neurogolf-2026/rules \
+            -o pages/rules.html
+          echo "rules_page=$?" >> pages/status.txt
+          curl -L -A 'Mozilla/5.0' --retry 3 \
+            https://www.kaggle.com/competitions/neurogolf-2026/discussion/724717 \
+            -o pages/discussion_724717.html
+          echo "discussion_724717=$?" >> pages/status.txt
+          curl -L -A 'Mozilla/5.0' --retry 3 \
+            https://www.kaggle.com/competitions/neurogolf-2026/discussion/724725 \
+            -o pages/discussion_724725.html
+          echo "discussion_724725=$?" >> pages/status.txt
+          curl -L -A 'Mozilla/5.0' --retry 3 \
+            https://www.kaggle.com/api/v1/datasets/view/zealous9230/neurogolf7300 \
+            -o pages/dataset7300_metadata.json
+          echo "dataset_metadata=$?" >> pages/status.txt
+          wc -c pages/*
           set -e
 
-      - name: Upload source snapshots
+      - name: Upload pages
         uses: actions/upload-artifact@v4
         with:
-          name: neurogolf-public-research-sources
-          path: |
-            ngc-work-source.tar.gz
-            public-7090-source.tar.gz
-            source_sha256.txt
-            kaggle_probe_status.txt
-            kernel7266_output.zip
-            dataset7300.zip
-          if-no-files-found: warn
+          name: neurogolf-rules-and-discussions
+          path: pages/
           retention-days: 1
