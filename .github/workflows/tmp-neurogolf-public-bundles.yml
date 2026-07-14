@@ -1,4 +1,4 @@
-name: Temporary NeuroGolf 7300 dataset fetch
+name: Temporary NeuroGolf source export
 
 on:
   pull_request:
@@ -9,29 +9,24 @@ permissions:
   contents: read
 
 jobs:
-  fetch-dataset:
+  export-source:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Download public Kaggle dataset
+      - name: Clone and archive source builders
         shell: bash
         run: |
           set -euxo pipefail
-          mkdir -p artifact/extracted
-          curl -A 'Mozilla/5.0' -fL --retry 4 --retry-all-errors --connect-timeout 30 --max-time 900 \
-            'https://www.kaggle.com/api/v1/datasets/download/zealous9230/neurogolf7300' \
-            -o artifact/zealous9230_neurogolf7300.zip
-          file artifact/zealous9230_neurogolf7300.zip
-          unzip -t artifact/zealous9230_neurogolf7300.zip
-          unzip -q artifact/zealous9230_neurogolf7300.zip -d artifact/extracted
-          find artifact/extracted -type f -printf '%p %s bytes\n' | sort | tee artifact/inventory.txt
-          find artifact/extracted -type f -name 'task*.onnx' | wc -l | tee artifact/model_count.txt
-          sha256sum artifact/zealous9230_neurogolf7300.zip | tee artifact/sha256.txt
+          git clone --depth 1 https://github.com/MinseongS/neurogolf.git repo
+          rm -rf repo/.git
+          find repo -maxdepth 3 -type f | sort | head -500
+          zip -qr neurogolf-source-builders.zip repo
+          sha256sum neurogolf-source-builders.zip
 
-      - name: Upload public dataset
+      - name: Upload source builders
         uses: actions/upload-artifact@v4
         with:
-          name: neurogolf-public-zealous7300-dataset
-          path: artifact/
+          name: neurogolf-source-builders
+          path: neurogolf-source-builders.zip
           compression-level: 0
           retention-days: 1
