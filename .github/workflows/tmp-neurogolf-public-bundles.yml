@@ -1,4 +1,4 @@
-name: Temporary NeuroGolf 7384.93 package extraction
+name: Temporary NeuroGolf positive model extraction
 
 on:
   pull_request:
@@ -9,29 +9,42 @@ permissions:
   contents: read
 
 jobs:
-  extract-7384:
+  extract-positive-models:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Clone public research repository and collect scored package
+      - name: Clone public research repository and locate exact model hashes
         shell: bash
         run: |
           set -euxo pipefail
           git clone --depth 1 https://github.com/lljjcc426/NGC-work.git ngc
           mkdir -p artifact
-          SRC='ngc/workplace B/20260714_b_submission3_exact_batch1_online7384_93_v1'
-          cp "$SRC/submission/submission.zip" artifact/neurogolf_public_7384_93_submission.zip
-          cp "$SRC/submission/base_submission.zip" artifact/neurogolf_public_7383_93_base.zip
-          cp "$SRC/README.md" artifact/README_7384_93.md
-          cp -r "$SRC/reports" artifact/reports
-          cp -r "$SRC/models" artifact/models
-          sha256sum artifact/*.zip | tee artifact/sha256.txt
-          find artifact -maxdepth 3 -type f -printf '%p %s bytes\n' | sort
+          python - <<'PY'
+          import hashlib, json, pathlib, shutil
+          root=pathlib.Path('ngc')
+          wanted={
+            '36a73b162000f3c2548a831c0c567b67724552478fc145cfd67b659237db686d':'task138.onnx',
+            '02ff032b8b63f6c6a7a40b5a63af97364d47b3b38d5df06bf4eb4916a0947275':'task216.onnx',
+          }
+          found=[]
+          for p in root.rglob('*.onnx'):
+            h=hashlib.sha256(p.read_bytes()).hexdigest()
+            if h in wanted:
+              dst=pathlib.Path('artifact')/wanted[h]
+              shutil.copy2(p,dst)
+              found.append({'sha256':h,'source':str(p),'destination':str(dst),'bytes':p.stat().st_size})
+          pathlib.Path('artifact/found.json').write_text(json.dumps(found,indent=2))
+          print(json.dumps(found,indent=2))
+          if len({x['sha256'] for x in found}) != len(wanted):
+            raise SystemExit('Did not find every requested model hash')
+          PY
+          cp 'ngc/workplace E/e_fast_batch3_submission_20260714.json' artifact/
+          sha256sum artifact/task*.onnx | tee artifact/sha256.txt
 
-      - name: Upload NeuroGolf 7384.93 package
+      - name: Upload positive task models
         uses: actions/upload-artifact@v4
         with:
-          name: neurogolf-public-7384-93-package
+          name: neurogolf-positive-task138-task216
           path: artifact/
           compression-level: 0
           retention-days: 1
