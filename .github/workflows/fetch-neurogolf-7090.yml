@@ -1,0 +1,62 @@
+name: Fetch NeuroGolf 7090 package
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fetch-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone public NeuroGolf repository
+        run: |
+          git clone --depth 1 https://github.com/beltromatti/neurogolf-2026.git public-neurogolf
+          cp public-neurogolf/submission.zip public_submission.zip
+
+      - name: Validate submission archive
+        run: |
+          python - <<'PY'
+          import hashlib, json, re, zipfile
+          from pathlib import Path
+
+          p = Path('public_submission.zip')
+          data = p.read_bytes()
+          sha = hashlib.sha256(data).hexdigest()
+          with zipfile.ZipFile(p) as z:
+              names = z.namelist()
+              onnx = [n for n in names if n.lower().endswith('.onnx')]
+              flat = all('/' not in n.rstrip('/') for n in names)
+              task_ids = sorted(
+                  int(m.group(1))
+                  for n in onnx
+                  if (m := re.fullmatch(r'task(\d{3})\.onnx', n))
+              )
+              report = {
+                  'zip_bytes': len(data),
+                  'zip_sha256': sha,
+                  'entry_count': len(names),
+                  'onnx_count': len(onnx),
+                  'flat_root': flat,
+                  'task_name_pattern_count': len(task_ids),
+                  'first_task': task_ids[0] if task_ids else None,
+                  'last_task': task_ids[-1] if task_ids else None,
+                  'missing_tasks': [i for i in range(1, 401) if i not in task_ids],
+              }
+          Path('public_submission_validation.json').write_text(json.dumps(report, indent=2))
+          print(json.dumps(report, indent=2))
+          if len(onnx) != 400 or not flat or task_ids != list(range(1, 401)):
+              raise SystemExit('Submission archive failed structural validation')
+          PY
+
+      - name: Upload validated package
+        uses: actions/upload-artifact@v4
+        with:
+          name: neurogolf-public-7090-package
+          path: |
+            public_submission.zip
+            public_submission_validation.json
+          retention-days: 1
