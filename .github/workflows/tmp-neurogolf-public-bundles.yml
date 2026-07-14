@@ -1,4 +1,4 @@
-name: Temporary NeuroGolf 7379 package extraction
+name: Temporary NeuroGolf 7384.93 package extraction
 
 on:
   pull_request:
@@ -9,29 +9,29 @@ permissions:
   contents: read
 
 jobs:
-  extract-7379:
+  extract-7384:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Clone public research repository and collect package
+      - name: Clone public research repository and collect scored package
         shell: bash
         run: |
           set -euxo pipefail
           git clone --depth 1 https://github.com/lljjcc426/NGC-work.git ngc
           mkdir -p artifact
-          SRC='ngc/workplace B/20260713_b_team7378_original_rewrites_v1'
-          cp "$SRC/submission/submission.zip" artifact/neurogolf_public_7379_07_submission.zip
-          cp "$SRC/submission/base_submission.zip" artifact/neurogolf_public_7377_86_base.zip
-          cp "$SRC/README.md" artifact/README_7379.md
+          SRC='ngc/workplace B/20260714_b_submission3_exact_batch1_online7384_93_v1'
+          cp "$SRC/submission/submission.zip" artifact/neurogolf_public_7384_93_submission.zip
+          cp "$SRC/submission/base_submission.zip" artifact/neurogolf_public_7383_93_base.zip
+          cp "$SRC/README.md" artifact/README_7384_93.md
           cp -r "$SRC/reports" artifact/reports
           cp -r "$SRC/models" artifact/models
           sha256sum artifact/*.zip | tee artifact/sha256.txt
           find artifact -maxdepth 3 -type f -printf '%p %s bytes\n' | sort
 
-      - name: Upload NeuroGolf 7379 package
+      - name: Upload NeuroGolf 7384.93 package
         uses: actions/upload-artifact@v4
         with:
-          name: neurogolf-public-7379-package
+          name: neurogolf-public-7384-93-package
           path: artifact/
           compression-level: 0
           retention-days: 1
