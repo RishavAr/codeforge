@@ -1,0 +1,48 @@
+name: Temporary NeuroGolf public bundle fetch
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  fetch-public-bundles:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Fetch public Kaggle kernel outputs
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p bundles
+          download_kernel() {
+            local slug="$1"
+            local name="$2"
+            local url="https://www.kaggle.com/api/v1/kernels/output/${slug}"
+            echo "Downloading ${slug}"
+            curl -A 'Mozilla/5.0' -fL --retry 4 --retry-all-errors --connect-timeout 30 --max-time 600 \
+              "$url" -o "bundles/${name}.zip"
+            file "bundles/${name}.zip"
+            unzip -t "bundles/${name}.zip"
+            mkdir -p "bundles/${name}"
+            unzip -q "bundles/${name}.zip" -d "bundles/${name}"
+            find "bundles/${name}" -maxdepth 3 -type f -printf '%p %s bytes\n' | sort | head -200
+          }
+          download_kernel 'haonanzhengh/neurogolf-v9-models' 'haonanzhengh_v9'
+          download_kernel 'poby7722/7268-neurogolf-best-score' 'poby_7268'
+          download_kernel 'lucifer19/neurogolf-agi-circuit-forge' 'lucifer_7269'
+          find bundles -type f -name 'submission.zip' -print -exec sha256sum {} \;
+
+      - name: Upload fetched public bundles
+        uses: actions/upload-artifact@v4
+        with:
+          name: neurogolf-public-kaggle-bundles
+          path: bundles/
+          compression-level: 0
+          retention-days: 1
