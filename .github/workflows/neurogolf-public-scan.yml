@@ -1,0 +1,44 @@
+name: NeuroGolf public scan
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Scan Kaggle public resources
+        shell: bash
+        run: |
+          set +e
+          mkdir -p scan
+          python -m pip install -q kaggle requests
+          kaggle kernels list --competition neurogolf-2026 --page-size 100 > scan/kernels_cli.txt 2>&1
+          kaggle datasets list -s neurogolf --page-size 100 > scan/datasets_cli.txt 2>&1
+          python - <<'PY'
+          import json, requests
+          endpoints = {
+            'kernels_api': ('https://www.kaggle.com/api/v1/kernels/list', {'competition':'neurogolf-2026','pageSize':100,'page':1,'sortBy':'recent','group':'everyone'}),
+            'datasets_api': ('https://www.kaggle.com/api/v1/datasets/list', {'search':'neurogolf','pageSize':100,'page':1,'sortBy':'updated'}),
+          }
+          for name,(url,params) in endpoints.items():
+              try:
+                  r=requests.get(url,params=params,timeout=60,headers={'User-Agent':'Mozilla/5.0'})
+                  open(f'scan/{name}_status.txt','w').write(f'{r.status_code}\n{r.url}\n{r.text[:2000]}')
+                  if r.ok:
+                      try: json.dump(r.json(),open(f'scan/{name}.json','w'),indent=2)
+                      except Exception: open(f'scan/{name}.txt','w').write(r.text)
+              except Exception as e:
+                  open(f'scan/{name}_error.txt','w').write(repr(e))
+          PY
+          find scan -maxdepth 1 -type f -print -exec sed -n '1,120p' {} \;
+      - uses: actions/upload-artifact@v4
+        with:
+          name: neurogolf-public-scan
+          path: scan
