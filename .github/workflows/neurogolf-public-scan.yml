@@ -13,32 +13,43 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Scan Kaggle public resources
+      - name: Download high-score public NeuroGolf datasets
         shell: bash
         run: |
-          set +e
-          mkdir -p scan
-          python -m pip install -q kaggle requests
-          kaggle kernels list --competition neurogolf-2026 --page-size 100 > scan/kernels_cli.txt 2>&1
-          kaggle datasets list -s neurogolf --page-size 100 > scan/datasets_cli.txt 2>&1
+          set -e
+          mkdir -p downloads
+          python -m pip install -q requests
           python - <<'PY'
-          import json, requests
-          endpoints = {
-            'kernels_api': ('https://www.kaggle.com/api/v1/kernels/list', {'competition':'neurogolf-2026','pageSize':100,'page':1,'sortBy':'recent','group':'everyone'}),
-            'datasets_api': ('https://www.kaggle.com/api/v1/datasets/list', {'search':'neurogolf','pageSize':100,'page':1,'sortBy':'updated'}),
-          }
-          for name,(url,params) in endpoints.items():
+          import requests, pathlib, json
+          refs = [
+            'phixbugs/neurogolf-7860-points-v24',
+            'deepxchat/neurogolf-ultra-promax-2026',
+            'deepxchat/neurogolf-ultra-2026',
+            'arman1o1/neurogolf-v7-submission',
+            'haonanzhengh/neurogolf-v9-models',
+          ]
+          report=[]
+          for ref in refs:
+              name=ref.replace('/','__')
+              url=f'https://www.kaggle.com/api/v1/datasets/download/{ref}'
               try:
-                  r=requests.get(url,params=params,timeout=60,headers={'User-Agent':'Mozilla/5.0'})
-                  open(f'scan/{name}_status.txt','w').write(f'{r.status_code}\n{r.url}\n{r.text[:2000]}')
-                  if r.ok:
-                      try: json.dump(r.json(),open(f'scan/{name}.json','w'),indent=2)
-                      except Exception: open(f'scan/{name}.txt','w').write(r.text)
+                  r=requests.get(url,timeout=180,allow_redirects=True,headers={'User-Agent':'Mozilla/5.0'})
+                  item={'ref':ref,'status':r.status_code,'url':r.url,'bytes':len(r.content),'content_type':r.headers.get('content-type')}
+                  if r.ok and r.content[:2]==b'PK':
+                      path=pathlib.Path('downloads')/(name+'.zip')
+                      path.write_bytes(r.content)
+                      item['saved']=str(path)
+                  else:
+                      pathlib.Path('downloads')/(name+'.txt')
+                      open(f'downloads/{name}.txt','wb').write(r.content[:10000])
+                  report.append(item)
+                  print(item)
               except Exception as e:
-                  open(f'scan/{name}_error.txt','w').write(repr(e))
+                  report.append({'ref':ref,'error':repr(e)})
+          json.dump(report,open('downloads/report.json','w'),indent=2)
           PY
-          find scan -maxdepth 1 -type f -print -exec sed -n '1,120p' {} \;
+          find downloads -maxdepth 1 -type f -printf '%f %s bytes\n'
       - uses: actions/upload-artifact@v4
         with:
-          name: neurogolf-public-scan
-          path: scan
+          name: neurogolf-public-downloads
+          path: downloads
