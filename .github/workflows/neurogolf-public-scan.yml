@@ -13,43 +13,33 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Download high-score public NeuroGolf datasets
+      - name: Search high-score public NeuroGolf datasets
         shell: bash
         run: |
           set -e
-          mkdir -p downloads
+          mkdir -p scan
           python -m pip install -q requests
           python - <<'PY'
-          import requests, pathlib, json
-          refs = [
-            'phixbugs/neurogolf-7860-points-v24',
-            'deepxchat/neurogolf-ultra-promax-2026',
-            'deepxchat/neurogolf-ultra-2026',
-            'arman1o1/neurogolf-v7-submission',
-            'haonanzhengh/neurogolf-v9-models',
-          ]
-          report=[]
-          for ref in refs:
-              name=ref.replace('/','__')
-              url=f'https://www.kaggle.com/api/v1/datasets/download/{ref}'
-              try:
-                  r=requests.get(url,timeout=180,allow_redirects=True,headers={'User-Agent':'Mozilla/5.0'})
-                  item={'ref':ref,'status':r.status_code,'url':r.url,'bytes':len(r.content),'content_type':r.headers.get('content-type')}
-                  if r.ok and r.content[:2]==b'PK':
-                      path=pathlib.Path('downloads')/(name+'.zip')
-                      path.write_bytes(r.content)
-                      item['saved']=str(path)
-                  else:
-                      pathlib.Path('downloads')/(name+'.txt')
-                      open(f'downloads/{name}.txt','wb').write(r.content[:10000])
-                  report.append(item)
-                  print(item)
-              except Exception as e:
-                  report.append({'ref':ref,'error':repr(e)})
-          json.dump(report,open('downloads/report.json','w'),indent=2)
+          import requests, json, re
+          searches=['neurogolf 8200','neurogolf 8190','neurogolf 8179','neurogolf 8100','neurogolf 8000','neurogolf 7900','neurogolf 7800','neurogolf points','neurogolf ultra']
+          all_items={}
+          for q in searches:
+              r=requests.get('https://www.kaggle.com/api/v1/datasets/list',params={'search':q,'pageSize':100,'page':1,'sortBy':'updated'},timeout=90,headers={'User-Agent':'Mozilla/5.0'})
+              open('scan/'+re.sub(r'[^a-z0-9]+','_',q.lower())+'.status','w').write(str(r.status_code)+'\n'+r.url+'\n'+r.text[:1000])
+              if r.ok:
+                  items=r.json()
+                  json.dump(items,open('scan/'+re.sub(r'[^a-z0-9]+','_',q.lower())+'.json','w'),indent=2)
+                  for x in items: all_items[x.get('ref')]=x
+          rows=[]
+          for ref,x in all_items.items():
+              title=x.get('title','')
+              nums=[int(n) for n in re.findall(r'(?<!\d)(7\d{3}|8\d{3}|9\d{3})(?!\d)',title)]
+              rows.append({'ref':ref,'title':title,'lastUpdated':x.get('lastUpdated'),'bytes':x.get('totalBytes'),'numbers':nums,'url':x.get('url')})
+          rows.sort(key=lambda x:(max(x['numbers'] or [0]),x.get('lastUpdated') or ''),reverse=True)
+          json.dump(rows,open('scan/combined_ranked.json','w'),indent=2)
+          for row in rows: print(row)
           PY
-          find downloads -maxdepth 1 -type f -printf '%f %s bytes\n'
       - uses: actions/upload-artifact@v4
         with:
-          name: neurogolf-public-downloads
-          path: downloads
+          name: neurogolf-highscore-search
+          path: scan
